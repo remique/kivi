@@ -82,20 +82,23 @@ fn build_keydir(active_file: &File, mem_index: &mut BTreeMap<String, InternalRec
     // first we iterate over all stale files decreasing order
     // and then insert keys and values
     let reader = std::io::BufReader::new(active_file);
+    let mut pos: i32 = 0;
     let mut commands = serde_json::Deserializer::from_reader(reader).into_iter::<KiviCommand>();
 
     while let Some(cos) = commands.next() {
+        let new_pos = commands.byte_offset() as i32;
+
         if let Ok(kivi_command) = cos {
             if let KiviCommand::Set { key, value } = kivi_command {
                 let rec = InternalRecord {
                     file_id: "1.log".to_string(),
                     value_size: value.len() as i32,
-                    // TODO: write proper  pos, so need to remember buffer position
-                    value_pos: 0,
+                    value_pos: pos,
                 };
                 mem_index.insert(key, rec);
             }
         }
+        pos = new_pos;
     }
 }
 
