@@ -13,7 +13,7 @@ const DATA_DIR: &str = "data";
 const HINTS_DIR: &str = "hints";
 
 struct KiviStore {
-    mem_index: BTreeMap<String, String>,
+    mem_index: BTreeMap<String, InternalRecord>,
     active_file: File,
     // stale_files: Vec<FileId>,
 }
@@ -24,13 +24,14 @@ struct Record {
     value: String,
 }
 
+#[derive(Debug)]
 struct InternalRecord {
     file_id: String,
     value_size: i32,
     value_pos: i32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 enum KiviCommand {
     Set { key: String, value: String },
     Delete { key: String },
@@ -47,6 +48,8 @@ impl KiviStore {
             .open("1.log")
             .unwrap();
 
+        build_keydir(&active_file, &mut mem_index);
+
         Self {
             mem_index,
             active_file,
@@ -57,7 +60,7 @@ impl KiviStore {
         // println!("Doing KiviStore GET. Key: {}", key);
         let get_by_key = self.mem_index.get(&key);
         if let Some(val) = get_by_key {
-            println!("KiviStore GET: Got {}", val);
+            println!("KiviStore GET: Got {:?}", val);
         } else {
             println!("KiviStore GET: not found");
         }
@@ -73,10 +76,26 @@ impl KiviStore {
         self.active_file.write_all(j.as_bytes()).unwrap();
         // self.mem_index.insert(key, value);
     }
+}
 
-    fn build_keydir(&mut self) {
-        // first we iterate over all stale files decreasing order
-        // and then insert keys and values
+fn build_keydir(active_file: &File, mem_index: &mut BTreeMap<String, InternalRecord>) {
+    // first we iterate over all stale files decreasing order
+    // and then insert keys and values
+    let reader = std::io::BufReader::new(active_file);
+    let mut commands = serde_json::Deserializer::from_reader(reader).into_iter::<KiviCommand>();
+
+    while let Some(cos) = commands.next() {
+        if let Ok(kivi_command) = cos {
+            if let KiviCommand::Set { key, value } = kivi_command {
+                let rec = InternalRecord {
+                    file_id: "1.log".to_string(),
+                    value_size: value.len() as i32,
+                    // TODO: write proper  pos, so need to remember buffer position
+                    value_pos: 0,
+                };
+                mem_index.insert(key, rec);
+            }
+        }
     }
 }
 
