@@ -15,7 +15,7 @@ const HINTS_DIR: &str = "hints";
 struct KiviStore {
     mem_index: BTreeMap<String, InternalRecord>,
     active_file: File,
-    // stale_files: Vec<FileId>,
+    stale_files: Vec<File>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -41,18 +41,47 @@ impl KiviStore {
     fn new() -> Self {
         let mut mem_index = BTreeMap::new();
 
+        // get read-only stale files
+        let stale_file_list = get_files();
+        let new_active_file_index = stale_file_list
+            .last()
+            .and_then(|x| x.file_stem())
+            .and_then(|x| x.to_str())
+            .and_then(|x| x.parse::<usize>().ok())
+            .unwrap()
+            + 1;
+
+        println!("new active file idx: {:?}", new_active_file_index);
+
+        let mut stale_files = Vec::new();
+
+        for item in stale_file_list {
+            let file_d = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .read(true)
+                .open(item)
+                .unwrap();
+
+            stale_files.push(file_d);
+        }
+
         let active_file = OpenOptions::new()
             .create(true)
             .append(true)
             .read(true)
-            .open("1.log")
+            // TODO: Same shit, move to config
+            .open(format!("{}.log", new_active_file_index.to_string()))
             .unwrap();
 
         build_keydir(&active_file, &mut mem_index);
 
+        println!("Stale files: {:?}", stale_files);
+
         Self {
             mem_index,
             active_file,
+            stale_files,
         }
     }
 
@@ -79,8 +108,6 @@ impl KiviStore {
 }
 
 fn build_keydir(active_file: &File, mem_index: &mut BTreeMap<String, InternalRecord>) {
-    // first we iterate over all stale files decreasing order
-    // and then insert keys and values
     let reader = std::io::BufReader::new(active_file);
     let mut pos: i32 = 0;
     let mut commands = serde_json::Deserializer::from_reader(reader).into_iter::<KiviCommand>();
@@ -102,12 +129,21 @@ fn build_keydir(active_file: &File, mem_index: &mut BTreeMap<String, InternalRec
     }
 }
 
-fn get_files() {
-    let xd = glob(format!("./{}/{}/*.data", KIVI_DIR, DATA_DIR).as_ref()).unwrap();
+fn get_files() -> Vec<std::path::PathBuf> {
+    let mut stale_file_list = Vec::new();
 
-    for item in xd {
-        println!("{:?}", item);
+    //TODO: Move "./{}/{}/" to config dir
+    let paths = glob(format!("./{}/{}/*.data", KIVI_DIR, DATA_DIR).as_ref()).unwrap();
+
+    for path in paths {
+        if let Ok(item) = path {
+            stale_file_list.push(item);
+        }
     }
+
+    stale_file_list.sort();
+
+    stale_file_list
 }
 
 fn main() {
