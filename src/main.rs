@@ -4,7 +4,11 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::{collections::BTreeMap, fs::OpenOptions};
 
+use std::net::{TcpListener, TcpStream};
+
 use clap::{Arg, Command};
+
+mod core;
 
 type FileId = i32;
 
@@ -37,75 +41,19 @@ enum KiviCommand {
     Delete { key: String },
 }
 
-impl KiviStore {
-    fn new() -> Self {
-        let mut mem_index = BTreeMap::new();
-
-        // get read-only stale files
-        let stale_file_list = get_files();
-        let new_active_file_index = stale_file_list
-            .last()
-            .and_then(|x| x.file_stem())
-            .and_then(|x| x.to_str())
-            .and_then(|x| x.parse::<usize>().ok())
-            .unwrap()
-            + 1;
-
-        println!("new active file idx: {:?}", new_active_file_index);
-
-        let mut stale_files = Vec::new();
-
-        for item in stale_file_list {
-            let file_d = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .read(true)
-                .open(item)
-                .unwrap();
-
-            stale_files.push(file_d);
-        }
-
-        let active_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            // TODO: Same shit, move to config
-            .open(format!("{}.log", new_active_file_index.to_string()))
-            .unwrap();
-
-        build_keydir(&active_file, &mut mem_index);
-
-        println!("Stale files: {:?}", stale_files);
-
-        Self {
-            mem_index,
-            active_file,
-            stale_files,
-        }
-    }
-
-    fn get(&self, key: String) {
-        // println!("Doing KiviStore GET. Key: {}", key);
-        let get_by_key = self.mem_index.get(&key);
-        if let Some(val) = get_by_key {
-            println!("KiviStore GET: Got {:?}", val);
-        } else {
-            println!("KiviStore GET: not found");
-        }
-    }
-
-    fn set(&mut self, key: String, value: String) {
-        println!("Doing KiviStore SET. Key: {}, Value: {}", key, value);
-
-        let set_com = KiviCommand::Set { key, value };
-
-        let j = serde_json::to_string(&set_com).unwrap();
-
-        self.active_file.write_all(j.as_bytes()).unwrap();
-        // self.mem_index.insert(key, value);
-    }
+struct Config {
+    files_path: String,
+    db_dir: String,
 }
+
+// impl Default for Config {
+//     fn default() -> Self {
+//         let db_dir = "db".to_string();
+//         let data_dir = "data".to_string();
+
+//         Self {}
+//     }
+// }
 
 fn build_keydir(active_file: &File, mem_index: &mut BTreeMap<String, InternalRecord>) {
     let reader = std::io::BufReader::new(active_file);
@@ -149,35 +97,51 @@ fn get_files() -> Vec<std::path::PathBuf> {
 fn main() {
     let mut ks = KiviStore::new();
 
-    let m = Command::new("kivi")
-        .subcommand(
-            Command::new("set")
-                .args([
-                    Arg::new("KEY").required(true),
-                    Arg::new("VALUE").required(true),
-                ])
-                .about("Sets a value to a key"),
-        )
-        .subcommand(
-            Command::new("get")
-                .arg(Arg::new("KEY").required(true))
-                .about("Gets a value by key"),
-        )
-        .get_matches();
+    let env = env_logger::Env::default()
+        .filter_or("MY_LOG_LEVEL", "trace")
+        .write_style_or("MY_LOG_STYLE", "always");
 
-    match m.subcommand() {
-        Some(("set", m)) => {
-            // We can unwrap here as they are both required
-            let key = m.get_one::<String>("KEY").unwrap().to_owned();
-            let value = m.get_one::<String>("VALUE").unwrap().to_owned();
+    env_logger::init_from_env(env);
 
-            ks.set(key, value);
-        }
-        Some(("get", m)) => {
-            let key = m.get_one::<String>("KEY").unwrap().to_owned();
+    log::info!("hehe");
 
-            ks.get(key);
-        }
-        _ => {}
+    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
+
+    for stream in listener.incoming() {
+        let stream = stream.unwrap();
+
+        println!("Connection established: {:?}", stream);
     }
+
+    // let m = Command::new("kivi")
+    //     .subcommand(
+    //         Command::new("set")
+    //             .args([
+    //                 Arg::new("KEY").required(true),
+    //                 Arg::new("VALUE").required(true),
+    //             ])
+    //             .about("Sets a value to a key"),
+    //     )
+    //     .subcommand(
+    //         Command::new("get")
+    //             .arg(Arg::new("KEY").required(true))
+    //             .about("Gets a value by key"),
+    //     )
+    //     .get_matches();
+
+    // match m.subcommand() {
+    //     Some(("set", m)) => {
+    //         // We can unwrap here as they are both required
+    //         let key = m.get_one::<String>("KEY").unwrap().to_owned();
+    //         let value = m.get_one::<String>("VALUE").unwrap().to_owned();
+
+    //         ks.set(key, value);
+    //     }
+    //     Some(("get", m)) => {
+    //         let key = m.get_one::<String>("KEY").unwrap().to_owned();
+
+    //         ks.get(key);
+    //     }
+    //     _ => {}
+    // }
 }
