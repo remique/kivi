@@ -2,12 +2,16 @@ use clap::{Arg, Command};
 
 mod core;
 
-fn main() {
+fn initialize_logger() {
     let env = env_logger::Env::default()
         .filter_or("MY_LOG_LEVEL", "trace")
         .write_style_or("MY_LOG_STYLE", "always");
 
     env_logger::init_from_env(env);
+}
+
+fn main() {
+    initialize_logger();
 
     let mut ks = core::kv::KiviStore::new();
 

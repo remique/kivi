@@ -1,6 +1,8 @@
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
+use std::os::fd::{AsFd, AsRawFd};
+use std::path::PathBuf;
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions};
 
 use crate::core::config::Config;
@@ -22,7 +24,7 @@ enum KiviCommand {
 pub struct KiviStore {
     mem_index: BTreeMap<String, InternalRecord>,
     active_file: File,
-    stale_files: Vec<File>,
+    stale_files: Vec<PathBuf>,
     config: Config,
 }
 
@@ -45,14 +47,7 @@ impl KiviStore {
         let mut stale_files = Vec::new();
 
         for item in stale_file_list {
-            let file_d = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .read(true)
-                .open(item)
-                .unwrap();
-
-            stale_files.push(file_d);
+            stale_files.push(item);
         }
 
         let active_file = OpenOptions::new()
@@ -67,7 +62,7 @@ impl KiviStore {
             config.new_active_file_path(new_active_file_index)
         );
 
-        build_keydir(&active_file, &mut mem_index);
+        build_keydir(&stale_files, &mut mem_index);
 
         log::debug!("Stale files: {:?}", stale_files);
 
@@ -100,31 +95,46 @@ impl KiviStore {
 
     fn compact(&mut self) {
         unimplemented!();
+        // First we create temporary directory /temp/
+        // We then get all keys from the keydir and open appropriate files in db/data
+        // then we save them in /temp, remove all db/data and copy new data to db/data
     }
 }
 
-fn build_keydir(active_file: &File, mem_index: &mut BTreeMap<String, InternalRecord>) {
-    let reader = std::io::BufReader::new(active_file);
-    let mut pos: i32 = 0;
-    let mut commands = serde_json::Deserializer::from_reader(reader).into_iter::<KiviCommand>();
+fn build_keydir(stale_files: &Vec<PathBuf>, mem_index: &mut BTreeMap<String, InternalRecord>) {
+    for file in stale_files {
+        let file_d = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .read(true)
+            .open(file)
+            .unwrap();
 
-    while let Some(cos) = commands.next() {
-        let new_pos = commands.byte_offset() as i32;
+        let reader = std::io::BufReader::new(file_d);
+        let mut pos: i32 = 0;
+        let mut commands = serde_json::Deserializer::from_reader(reader).into_iter::<KiviCommand>();
 
-        if let Ok(kivi_command) = cos {
-            if let KiviCommand::Set { key, value } = kivi_command {
-                let rec = InternalRecord {
-                    file_id: "1.log".to_string(),
-                    value_size: value.len() as i32,
-                    value_pos: pos,
-                };
-                mem_index.insert(key, rec);
+        while let Some(cos) = commands.next() {
+            let new_pos = commands.byte_offset() as i32;
+
+            if let Ok(kivi_command) = cos {
+                if let KiviCommand::Set { key, value } = kivi_command {
+                    let as_str = file.as_path().display().to_string();
+
+                    let rec = InternalRecord {
+                        file_id: as_str,
+                        value_size: value.len() as i32,
+                        value_pos: pos,
+                    };
+                    mem_index.insert(key, rec);
+                }
             }
+            pos = new_pos;
         }
-        pos = new_pos;
     }
 
     log::debug!("Successfully built keydir");
+    log::debug!("KeyDir: {:?}", mem_index);
 }
 
 fn get_files(config: &Config) -> Vec<std::path::PathBuf> {
