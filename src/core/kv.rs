@@ -93,12 +93,81 @@ impl KiviStore {
         self.active_file.write_all(j.as_bytes()).unwrap();
     }
 
-    fn compact(&mut self) {
-        unimplemented!();
-        // First we create temporary directory /temp/
-        // We then get all keys from the keydir and open appropriate files in db/data
-        // then we save them in /temp, remove all db/data and copy new data to db/data
+    pub fn compact(&mut self) {
+        let new_file_test_path = format!("./db/data/temp/{}", "costam.test");
+        std::fs::create_dir_all("./db/data/temp").unwrap();
+        let mut new_file_test = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(new_file_test_path.clone()) // TODO: change str
+            .expect("openoptions fails");
+
+        for (_key, record) in &self.mem_index {
+            let mut file_d = OpenOptions::new()
+                .read(true)
+                .open(format!("./{}", record.file_id.as_str()))
+                .expect("openoptions fails");
+
+            let mut esti = String::new();
+            let foo = file_d.read_to_string(&mut esti);
+
+            let new_str = esti
+                .get(
+                    record.value_pos as usize
+                        ..record.value_pos as usize + record.value_size as usize,
+                )
+                .unwrap();
+
+            let xd: KiviCommand = serde_json::from_str(new_str).unwrap();
+
+            log::info!(
+                "Reading from {}... Buffer: {:?}, bufer_2: {}",
+                record.file_id.as_str(),
+                xd,
+                new_str
+            );
+
+            new_file_test.write_all(new_str.as_bytes()).unwrap();
+        }
+
+        // 1. Delete all log files in db/data/
+        let files_to_delete = get_files(&self.config);
+        for item in files_to_delete {
+            std::fs::remove_file(item).unwrap(); // TODO: proper error handlin
+        }
+        // 2. Move new_file_test to db/data directory
+        drop(new_file_test);
+        std::fs::rename(new_file_test_path, "db/data/1.log").unwrap();
+        let new_stale_files = get_files(&self.config);
+        self.stale_files = new_stale_files;
+        // 3. Set new_file_test as stale files
+        // 4. Create new active_file
+
+        let active_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .read(true)
+            .open(
+                self.config
+                    .new_active_file_path(calculate_new_index(&self.stale_files)),
+            )
+            .unwrap();
+
+        std::fs::remove_dir("./db/data/temp").unwrap();
+
+        self.active_file = active_file;
     }
+}
+
+fn calculate_new_index(input: &Vec<std::path::PathBuf>) -> usize {
+    input
+        .last()
+        .and_then(|x| x.file_stem())
+        .and_then(|x| x.to_str())
+        .and_then(|x| x.parse::<usize>().ok())
+        .unwrap()
+        + 1
 }
 
 fn build_keydir(stale_files: &Vec<PathBuf>, mem_index: &mut BTreeMap<String, InternalRecord>) {
@@ -123,7 +192,7 @@ fn build_keydir(stale_files: &Vec<PathBuf>, mem_index: &mut BTreeMap<String, Int
 
                     let rec = InternalRecord {
                         file_id: as_str,
-                        value_size: value.len() as i32,
+                        value_size: new_pos - pos,
                         value_pos: pos,
                     };
                     mem_index.insert(key, rec);

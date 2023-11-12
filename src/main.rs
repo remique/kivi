@@ -29,6 +29,7 @@ fn main() {
                 .arg(Arg::new("KEY").required(true))
                 .about("Gets a value by key"),
         )
+        .subcommand(Command::new("compact").about("Compacts db"))
         .get_matches();
 
     match m.subcommand() {
@@ -43,6 +44,9 @@ fn main() {
             let key = m.get_one::<String>("KEY").unwrap().to_owned();
 
             ks.get(key);
+        }
+        Some(("compact", _)) => {
+            ks.compact();
         }
         _ => {}
     }
