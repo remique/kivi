@@ -50,12 +50,6 @@ impl KiviStore {
             .read(true)
             .open(config.new_active_file_path(new_active_file_index))?;
 
-        log::debug!("Stale files: {:?}", stale_files);
-        log::debug!(
-            "New active file path: {}",
-            config.new_active_file_path(new_active_file_index)
-        );
-
         build_keydir(&stale_files, &mut mem_index);
 
         Ok(Self {
@@ -70,22 +64,21 @@ impl KiviStore {
         // Read from file
         let mut file = OpenOptions::new()
             .read(true)
-            .open(format!("./{}", record.file_id.as_str()))?; //TODO: Change format
+            .open(record.file_id.as_str())?;
 
         // We use String as a buffer
         let mut s = String::new();
         file.read_to_string(&mut s)?;
 
-        let new_str = s
+        let get = s
             .get(record.value_pos as usize..record.value_pos as usize + record.value_size as usize);
 
-        match new_str {
+        match get {
             Some(x) => Ok(serde_json::from_str(x)?),
             None => Err(KiviError::Generic(format!("Costam"))),
         }
     }
 
-    // TODO: Add range scan later
     pub fn get(&self, key: String) -> Option<KeyValue> {
         match self.mem_index.get(&key) {
             Some(i) => match self.get_internal(i) {
@@ -103,11 +96,15 @@ impl KiviStore {
     }
 
     // TODO: This should also set to keydir
-    pub fn set(&mut self, key: String, value: String) {
+    pub fn set(&mut self, key: String, value: String) -> Result<()> {
         let set = KiviCommand::Set { key, value };
-        let j = serde_json::to_string(&set).unwrap();
+        let j = serde_json::to_string(&set)?;
 
-        self.active_file.write_all(j.as_bytes()).unwrap();
+        // Set to keydir
+        // self.mem_index.insert(key, value);
+        self.active_file.write_all(j.as_bytes())?;
+
+        Ok(())
     }
 
     pub fn delete(&mut self, _key: String) {
@@ -115,9 +112,10 @@ impl KiviStore {
     }
 
     // TODO: Can simplify this shit
-    pub fn compact(&mut self) {
+    pub fn compact(&mut self) -> Result<()> {
         let new_file_test_path = format!("./db/data/temp/{}", "costam.test");
         std::fs::create_dir_all("./db/data/temp").unwrap();
+
         let mut new_file_test = OpenOptions::new()
             .create(true)
             .read(true)
@@ -126,33 +124,17 @@ impl KiviStore {
             .expect("openoptions fails");
 
         for (_, record) in &self.mem_index {
-            let mut file_d = OpenOptions::new()
-                .read(true)
-                .open(format!("./{}", record.file_id.as_str()))
-                .expect("openoptions fails");
+            let internal = self.get_internal(record)?;
+            let as_str = serde_json::to_string(&internal)?;
 
-            let mut esti = String::new();
-            let foo = file_d.read_to_string(&mut esti);
-
-            let new_str = esti
-                .get(
-                    record.value_pos as usize
-                        ..record.value_pos as usize + record.value_size as usize,
-                )
-                .unwrap();
-
-            let xd: KiviCommand = serde_json::from_str(new_str).unwrap();
-
-            new_file_test.write_all(new_str.as_bytes()).unwrap();
+            new_file_test.write_all(as_str.as_bytes())?;
         }
 
         // 1. Delete all log files in db/data/
-        let files_to_delete = data_files_sorted(&self.config).iter().for_each(|f| {
+        data_files_sorted(&self.config).iter().for_each(|f| {
             std::fs::remove_file(f).unwrap();
         });
-        // for item in files_to_delete {
-        //     std::fs::remove_file(item).unwrap(); // TODO: proper error handlin
-        // }
+
         // 2. Move new_file_test to db/data directory
         drop(new_file_test);
         std::fs::rename(new_file_test_path, "db/data/1.log").unwrap();
@@ -174,6 +156,8 @@ impl KiviStore {
         std::fs::remove_dir("./db/data/temp").unwrap();
 
         self.active_file = active_file;
+
+        Ok(())
     }
 }
 
