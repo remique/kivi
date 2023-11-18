@@ -7,6 +7,9 @@ pub struct Config {
 
     /// Extension of the data files
     data_extension: String,
+
+    /// Temporary data directory that is used for data compaction
+    temp_data_dir: String,
 }
 
 impl Default for Config {
@@ -14,11 +17,13 @@ impl Default for Config {
         let main_db_dir = "db".to_string();
         let data_dir = "data".to_string();
         let data_extension = "log".to_string(); // file.log
+        let temp_data_dir = "temp".to_string();
 
         Self {
             main_db_dir,
             data_dir,
             data_extension,
+            temp_data_dir,
         }
     }
 }

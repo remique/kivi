@@ -1,11 +1,11 @@
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
-use std::os::fd::{AsFd, AsRawFd};
 use std::path::PathBuf;
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions};
 
 use crate::core::config::Config;
+use crate::core::error::{KiviError, Result};
 use log;
 
 #[derive(Debug)]
@@ -21,6 +21,12 @@ enum KiviCommand {
     Delete { key: String },
 }
 
+#[derive(Debug)]
+pub struct KeyValue {
+    pub key: String,
+    pub value: String,
+}
+
 pub struct KiviStore {
     mem_index: BTreeMap<String, InternalRecord>,
     active_file: File,
@@ -29,34 +35,22 @@ pub struct KiviStore {
 }
 
 impl KiviStore {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let config = Config::default();
 
         let mut mem_index = BTreeMap::new();
 
-        // get read-only stale files
-        let stale_file_list = get_files(&config);
-        let new_active_file_index = stale_file_list
-            .last()
-            .and_then(|x| x.file_stem())
-            .and_then(|x| x.to_str())
-            .and_then(|x| x.parse::<usize>().ok())
-            .unwrap()
-            + 1;
-
-        let mut stale_files = Vec::new();
-
-        for item in stale_file_list {
-            stale_files.push(item);
-        }
+        let stale_file_list = data_files_sorted(&config);
+        let new_active_file_index = calculate_new_index(&stale_file_list);
+        let stale_files = stale_file_list;
 
         let active_file = OpenOptions::new()
             .create(true)
             .append(true)
             .read(true)
-            .open(config.new_active_file_path(new_active_file_index))
-            .unwrap();
+            .open(config.new_active_file_path(new_active_file_index))?;
 
+        log::debug!("Stale files: {:?}", stale_files);
         log::debug!(
             "New active file path: {}",
             config.new_active_file_path(new_active_file_index)
@@ -64,35 +58,63 @@ impl KiviStore {
 
         build_keydir(&stale_files, &mut mem_index);
 
-        log::debug!("Stale files: {:?}", stale_files);
-
-        Self {
+        Ok(Self {
             mem_index,
             active_file,
             stale_files,
             config,
+        })
+    }
+
+    fn get_internal(&self, record: &InternalRecord) -> Result<KiviCommand> {
+        // Read from file
+        let mut file = OpenOptions::new()
+            .read(true)
+            .open(format!("./{}", record.file_id.as_str()))?; //TODO: Change format
+
+        // We use String as a buffer
+        let mut s = String::new();
+        file.read_to_string(&mut s)?;
+
+        let new_str = s
+            .get(record.value_pos as usize..record.value_pos as usize + record.value_size as usize);
+
+        match new_str {
+            Some(x) => Ok(serde_json::from_str(x)?),
+            None => Err(KiviError::Generic(format!("Costam"))),
         }
     }
 
-    pub fn get(&self, key: String) {
-        let get_by_key = self.mem_index.get(&key);
-        if let Some(val) = get_by_key {
-            println!("KiviStore GET: Got {:?}", val);
-        } else {
-            println!("KiviStore GET: not found");
+    // TODO: Add range scan later
+    pub fn get(&self, key: String) -> Option<KeyValue> {
+        match self.mem_index.get(&key) {
+            Some(i) => match self.get_internal(i) {
+                Ok(kv) => {
+                    if let KiviCommand::Set { key, value } = kv {
+                        Some(KeyValue { key, value })
+                    } else {
+                        None
+                    }
+                }
+                Err(_) => None,
+            },
+            None => None,
         }
     }
 
+    // TODO: This should also set to keydir
     pub fn set(&mut self, key: String, value: String) {
-        println!("Doing KiviStore SET. Key: {}, Value: {}", key, value);
-
-        let set_com = KiviCommand::Set { key, value };
-
-        let j = serde_json::to_string(&set_com).unwrap();
+        let set = KiviCommand::Set { key, value };
+        let j = serde_json::to_string(&set).unwrap();
 
         self.active_file.write_all(j.as_bytes()).unwrap();
     }
 
+    pub fn delete(&mut self, _key: String) {
+        unimplemented!();
+    }
+
+    // TODO: Can simplify this shit
     pub fn compact(&mut self) {
         let new_file_test_path = format!("./db/data/temp/{}", "costam.test");
         std::fs::create_dir_all("./db/data/temp").unwrap();
@@ -103,7 +125,7 @@ impl KiviStore {
             .open(new_file_test_path.clone()) // TODO: change str
             .expect("openoptions fails");
 
-        for (_key, record) in &self.mem_index {
+        for (_, record) in &self.mem_index {
             let mut file_d = OpenOptions::new()
                 .read(true)
                 .open(format!("./{}", record.file_id.as_str()))
@@ -121,25 +143,20 @@ impl KiviStore {
 
             let xd: KiviCommand = serde_json::from_str(new_str).unwrap();
 
-            log::info!(
-                "Reading from {}... Buffer: {:?}, bufer_2: {}",
-                record.file_id.as_str(),
-                xd,
-                new_str
-            );
-
             new_file_test.write_all(new_str.as_bytes()).unwrap();
         }
 
         // 1. Delete all log files in db/data/
-        let files_to_delete = get_files(&self.config);
-        for item in files_to_delete {
-            std::fs::remove_file(item).unwrap(); // TODO: proper error handlin
-        }
+        let files_to_delete = data_files_sorted(&self.config).iter().for_each(|f| {
+            std::fs::remove_file(f).unwrap();
+        });
+        // for item in files_to_delete {
+        //     std::fs::remove_file(item).unwrap(); // TODO: proper error handlin
+        // }
         // 2. Move new_file_test to db/data directory
         drop(new_file_test);
         std::fs::rename(new_file_test_path, "db/data/1.log").unwrap();
-        let new_stale_files = get_files(&self.config);
+        let new_stale_files = data_files_sorted(&self.config);
         self.stale_files = new_stale_files;
         // 3. Set new_file_test as stale files
         // 4. Create new active_file
@@ -160,6 +177,7 @@ impl KiviStore {
     }
 }
 
+/// Costam jakas definicja
 fn calculate_new_index(input: &Vec<std::path::PathBuf>) -> usize {
     input
         .last()
@@ -202,22 +220,21 @@ fn build_keydir(stale_files: &Vec<PathBuf>, mem_index: &mut BTreeMap<String, Int
         }
     }
 
-    log::debug!("Successfully built keydir");
     log::debug!("KeyDir: {:?}", mem_index);
 }
 
-fn get_files(config: &Config) -> Vec<std::path::PathBuf> {
-    let mut stale_file_list = Vec::new();
+fn data_files_sorted(config: &Config) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
 
     let paths = glob(config.get_glob_path().as_ref()).unwrap();
 
     for path in paths {
         if let Ok(item) = path {
-            stale_file_list.push(item);
+            files.push(item);
         }
     }
 
-    stale_file_list.sort();
+    files.sort();
 
-    stale_file_list
+    files
 }

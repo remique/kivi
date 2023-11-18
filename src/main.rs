@@ -1,6 +1,7 @@
-use clap::{Arg, Command};
-
 mod core;
+
+use clap::{Arg, Command};
+use core::error::Result;
 
 fn initialize_logger() {
     let env = env_logger::Env::default()
@@ -10,10 +11,10 @@ fn initialize_logger() {
     env_logger::init_from_env(env);
 }
 
-fn main() {
+fn main() -> Result<()> {
     initialize_logger();
 
-    let mut ks = core::kv::KiviStore::new();
+    let mut ks = core::kv::KiviStore::new()?;
 
     let m = Command::new("kivi")
         .subcommand(
@@ -43,11 +44,20 @@ fn main() {
         Some(("get", m)) => {
             let key = m.get_one::<String>("KEY").unwrap().to_owned();
 
-            ks.get(key);
+            match ks.get(key) {
+                Some(kv) => {
+                    println!("Got: {:?}", kv);
+                }
+                None => {
+                    println!("Got nothing");
+                }
+            }
         }
         Some(("compact", _)) => {
             ks.compact();
         }
         _ => {}
     }
+
+    Ok(())
 }
