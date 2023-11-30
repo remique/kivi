@@ -5,6 +5,7 @@ Kivi is a disk-based and persistent key-value store built for educational purpos
 ## Features
 
 * CLI interface
+* TCP Client & Server (synchronous)
 * Basic CRUD operations 
 * Compaction algorithm
 
@@ -15,6 +16,4 @@ Kivi is a disk-based and persistent key-value store built for educational purpos
 ## TODO
 
 * Use binary format for storing datafiles 
-* Add TCP Server & Client 
 * Implement range scans 
-* Add tests 
