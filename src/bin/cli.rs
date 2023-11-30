@@ -1,7 +1,5 @@
-mod core;
-
 use clap::{Arg, Command};
-use core::error::Result;
+use kivi::core::{error::Result, kv::KiviStore};
 
 fn initialize_logger() {
     let env = env_logger::Env::default()
@@ -14,7 +12,7 @@ fn initialize_logger() {
 fn main() -> Result<()> {
     initialize_logger();
 
-    let mut ks = core::kv::KiviStore::new()?;
+    let mut ks = KiviStore::new()?;
 
     let m = Command::new("kivi")
         .subcommand(

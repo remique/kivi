@@ -3,6 +3,8 @@ use std::net::{TcpListener, TcpStream};
 use std::str;
 use std::thread;
 
+use kivi::core::kv::KiviStore;
+
 fn initialize_logger() {
     let env = env_logger::Env::default()
         .filter_or("MY_LOG_LEVEL", "trace")
