@@ -80,6 +80,8 @@ impl KiviStore {
     }
 
     pub fn get(&self, key: String) -> Option<KeyValue> {
+        log::trace!("GET command key: {}", key);
+
         match self.mem_index.get(&key) {
             Some(i) => match self.get_internal(i) {
                 Ok(kv) => {
@@ -97,6 +99,8 @@ impl KiviStore {
 
     // TODO: This should also set to keydir
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
+        log::trace!("SET command key: {}, value: {}", key, value);
+
         let set = KiviCommand::Set { key, value };
         let j = serde_json::to_string(&set)?;
 

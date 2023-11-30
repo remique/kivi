@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::str;
 
@@ -49,8 +49,22 @@ impl KiviServer {
 
         match command {
             Command::Get { key } => {
-                println!("Get");
                 let res = self.engine.get(key);
+
+                match res {
+                    Some(item) => {
+                        println!("Got {:?}", item);
+
+                        stream
+                            .write_all(
+                                format!("Key: {}, Value: {}", item.key, item.value).as_bytes(),
+                            )
+                            .expect("Could not respond");
+                    }
+                    None => {
+                        println!("Didnt got nothing");
+                    }
+                }
             }
             Command::Set { key, value } => {
                 //
