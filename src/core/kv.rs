@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions};
+use tempdir::TempDir;
 
 use crate::core::config::Config;
 use crate::core::error::{KiviError, Result};
@@ -35,9 +36,8 @@ pub struct KiviStore {
 }
 
 impl KiviStore {
-    pub fn new() -> Result<Self> {
-        let config = Config::default();
-
+    // This is probably redundant, but at least `new` and `with_config` are cleaner
+    fn initialize(config: Config) -> Result<Self> {
         let mut mem_index = BTreeMap::new();
 
         let stale_file_list = data_files_sorted(&config);
@@ -57,6 +57,28 @@ impl KiviStore {
             active_file,
             stale_files,
             config,
+        })
+    }
+
+    pub fn new() -> Result<Self> {
+        let res = Self::initialize(Config::default())?;
+
+        Ok(Self {
+            mem_index: res.mem_index,
+            active_file: res.active_file,
+            stale_files: res.stale_files,
+            config: res.config,
+        })
+    }
+
+    pub fn with_config(config: Config) -> Result<Self> {
+        let res = Self::initialize(config)?;
+
+        Ok(Self {
+            mem_index: res.mem_index,
+            active_file: res.active_file,
+            stale_files: res.stale_files,
+            config: res.config,
         })
     }
 
@@ -225,4 +247,15 @@ fn data_files_sorted(config: &Config) -> Vec<std::path::PathBuf> {
     files.sort();
 
     files
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempdir::TempDir;
+
+    #[test]
+    fn test_creating() {
+        assert_eq!(2 + 2, 4);
+    }
 }
