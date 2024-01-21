@@ -36,8 +36,20 @@ pub struct KiviStore {
 }
 
 impl KiviStore {
-    // This is probably redundant, but at least `new` and `with_config` are cleaner
+    fn create_directories(config: &Config) -> Result<()> {
+        std::fs::create_dir_all(config.get_full_path())?;
+        log::trace!(
+            "Checking and creting directories at path: {}",
+            config.get_full_path()
+        );
+
+        Ok(())
+    }
+
     fn initialize(config: Config) -> Result<Self> {
+        // Create directories if they dont exist
+        Self::create_directories(&config)?;
+
         let mut mem_index = BTreeMap::new();
 
         let stale_file_list = data_files_sorted(&config);
@@ -187,8 +199,11 @@ impl KiviStore {
     }
 }
 
-/// Costam jakas definicja
 fn calculate_new_index(input: &Vec<std::path::PathBuf>) -> usize {
+    if input.is_empty() {
+        return 1 as usize;
+    }
+
     input
         .last()
         .and_then(|x| x.file_stem())
@@ -258,4 +273,10 @@ mod tests {
     fn test_creating() {
         assert_eq!(2 + 2, 4);
     }
+
+    // test: create kv without directories
+    //
+    // test: create kv with existing directories
+    //
+    // test: create kv with weird data inside -> should crash
 }

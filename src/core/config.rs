@@ -97,6 +97,18 @@ impl Config {
             self.data_extension
         )
     }
+
+    pub fn get_db_path(&self) -> &PathBuf {
+        &self.db_path
+    }
+
+    pub fn get_data_dir(&self) -> &String {
+        &self.data_dir
+    }
+
+    pub fn get_full_path(&self) -> String {
+        format!("{}/{}", &self.db_path.to_str().unwrap(), self.data_dir)
+    }
 }
 
 #[cfg(test)]
@@ -111,6 +123,7 @@ mod tests {
         assert_eq!(c.db_path, p);
         assert_eq!(c.get_glob_path(), String::from("./db/data/*.log"));
         assert_eq!(c.new_active_file_path(1), String::from("./db/data/1.log"));
+        assert_eq!(c.get_full_path(), String::from("./db/data"))
     }
 
     #[test]
@@ -122,6 +135,7 @@ mod tests {
         assert_eq!(c.db_path, p);
         assert_eq!(c.get_glob_path(), String::from("./db/data/*.log"));
         assert_eq!(c.new_active_file_path(1), String::from("./db/data/1.log"));
+        assert_eq!(c.get_full_path(), String::from("./db/data"))
     }
 
     #[test]
@@ -141,5 +155,6 @@ mod tests {
             c.new_active_file_path(1),
             String::from("/var/folders/h_/abc/ddd/1.filez")
         );
+        assert_eq!(c.get_full_path(), String::from("/var/folders/h_/abc/ddd"))
     }
 }
