@@ -1,7 +1,9 @@
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
-name: CI
+name: Continuous Integration
 
 jobs:
   check:
