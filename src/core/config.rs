@@ -106,6 +106,10 @@ impl Config {
         &self.data_dir
     }
 
+    pub fn get_data_extension(&self) -> &String {
+        &self.data_extension
+    }
+
     pub fn get_full_path(&self) -> String {
         format!("{}/{}", &self.db_path.to_str().unwrap(), self.data_dir)
     }
