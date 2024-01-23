@@ -268,6 +268,7 @@ fn build_keydir(stale_files: &Vec<PathBuf>, mem_index: &mut BTreeMap<String, Int
 fn data_files_sorted(config: &Config) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
 
+    // TODO: If it's not [0-9]* then fail
     let paths = glob(config.get_glob_path().as_ref()).unwrap();
 
     for path in paths {
@@ -284,6 +285,7 @@ fn data_files_sorted(config: &Config) -> Vec<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{os::unix::prelude::PermissionsExt, path::Path};
     use tempdir::TempDir;
 
     #[test]
@@ -379,9 +381,70 @@ mod tests {
         assert_eq!(kv.get("g".to_string()), None);
     }
 
-    // test: create kv without directories
-    //
-    // test: create kv with existing directories
-    //
-    // test: create kv with weird data inside -> should crash
+    #[test]
+    fn test_file_indexing_works() {
+        let tempdir = TempDir::new("file_indexing").unwrap();
+
+        let config = Config::new()
+            .set_db_path(tempdir.path().to_path_buf())
+            .build();
+
+        // Create directories
+        std::fs::create_dir_all(config.get_full_path()).unwrap();
+
+        // Create file with data extension
+        let file_path =
+            Path::new(&config.get_full_path()).join(format!("1.{}", config.get_data_extension()));
+
+        assert!(!&file_path.exists());
+
+        let _ = File::create(&file_path).unwrap();
+
+        assert!(&file_path.exists());
+
+        let new_file_path =
+            Path::new(&config.get_full_path()).join(format!("2.{}", config.get_data_extension()));
+
+        let _ = KiviStore::with_config(config).unwrap();
+
+        assert!(new_file_path.exists());
+    }
+
+    #[test]
+    fn after_drop_works() {
+        let tempdir = TempDir::new("after_drop").unwrap();
+
+        let mut kv1 = KiviStore::with_config(
+            Config::new()
+                .set_db_path(tempdir.path().to_path_buf())
+                .build(),
+        )
+        .unwrap();
+
+        let set = kv1.set("a".to_string(), "b".to_string());
+        assert!(set.is_ok());
+
+        drop(kv1);
+
+        let kv2 = KiviStore::with_config(
+            Config::new()
+                .set_db_path(tempdir.path().to_path_buf())
+                .build(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            kv2.get("a".to_string()),
+            Some(KeyValue {
+                key: "a".to_string(),
+                value: "b".to_string()
+            })
+        );
+        assert_eq!(kv2.get("c".to_string()), None);
+    }
+
+    #[test]
+    fn test_bad_files_inside_fail() {
+        //
+    }
 }
