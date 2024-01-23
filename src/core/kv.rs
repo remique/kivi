@@ -1,6 +1,7 @@
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
+use std::os::fd::AsFd;
 use std::path::PathBuf;
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions};
 use tempdir::TempDir;
@@ -22,7 +23,7 @@ enum KiviCommand {
     Delete { key: String },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct KeyValue {
     pub key: String,
     pub value: String,
@@ -55,6 +56,8 @@ impl KiviStore {
         let stale_file_list = data_files_sorted(&config);
         let new_active_file_index = calculate_new_index(&stale_file_list);
         let stale_files = stale_file_list;
+
+        log::info!("Current active file index: {}", new_active_file_index);
 
         let active_file = OpenOptions::new()
             .create(true)
@@ -131,16 +134,30 @@ impl KiviStore {
         }
     }
 
-    // TODO: This should also set to keydir
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
         log::trace!("SET command key: {}, value: {}", key, value);
 
-        let set = KiviCommand::Set { key, value };
+        let set = KiviCommand::Set {
+            key: key.clone(),
+            value,
+        };
         let j = serde_json::to_string(&set)?;
 
-        // Set to keydir
-        // self.mem_index.insert(key, value);
         self.active_file.write_all(j.as_bytes())?;
+
+        // TODO: cleaner
+        let path = self
+            .config
+            .new_active_file_path(calculate_new_index(&self.stale_files));
+
+        let rec = InternalRecord {
+            file_id: path,
+            value_size: j.len() as i32,
+            value_pos: self.active_file.metadata().unwrap().len() as i32 - j.len() as i32,
+        };
+
+        log::info!("InternalRecord: {:?}", rec);
+        self.mem_index.insert(key, rec);
 
         Ok(())
     }
@@ -230,7 +247,7 @@ fn build_keydir(stale_files: &Vec<PathBuf>, mem_index: &mut BTreeMap<String, Int
             let new_pos = commands.byte_offset() as i32;
 
             if let Ok(kivi_command) = cos {
-                if let KiviCommand::Set { key, value } = kivi_command {
+                if let KiviCommand::Set { key, value: _ } = kivi_command {
                     let as_str = file.as_path().display().to_string();
 
                     let rec = InternalRecord {
@@ -271,7 +288,95 @@ mod tests {
 
     #[test]
     fn test_creating() {
-        assert_eq!(2 + 2, 4);
+        let tempdir = TempDir::new("creating").unwrap();
+
+        let kv = KiviStore::with_config(
+            Config::new()
+                .set_db_path(tempdir.path().to_path_buf())
+                .build(),
+        );
+
+        assert!(kv.is_ok());
+    }
+
+    #[test]
+    fn test_empty_get() {
+        let tempdir = TempDir::new("empty_get").unwrap();
+
+        let kv = KiviStore::with_config(
+            Config::new()
+                .set_db_path(tempdir.path().to_path_buf())
+                .build(),
+        )
+        .unwrap();
+
+        assert_eq!(kv.get("a".to_string()), None)
+    }
+
+    #[test]
+    fn test_single_set() {
+        let tempdir = TempDir::new("single_set").unwrap();
+
+        let mut kv = KiviStore::with_config(
+            Config::new()
+                .set_db_path(tempdir.path().to_path_buf())
+                .build(),
+        )
+        .unwrap();
+
+        let set = kv.set("a".to_string(), "b".to_string());
+        assert!(set.is_ok());
+
+        assert_eq!(
+            kv.get("a".to_string()),
+            Some(KeyValue {
+                key: "a".to_string(),
+                value: "b".to_string()
+            })
+        );
+        assert_eq!(kv.get("c".to_string()), None);
+    }
+
+    #[test]
+    fn test_multiple_set() {
+        let tempdir = TempDir::new("multiple_set").unwrap();
+
+        let mut kv = KiviStore::with_config(
+            Config::new()
+                .set_db_path(tempdir.path().to_path_buf())
+                .build(),
+        )
+        .unwrap();
+
+        let set1 = kv.set("a".to_string(), "b".to_string());
+        let set2 = kv.set("c".to_string(), "d".to_string());
+        let set3 = kv.set("e".to_string(), "f".to_string());
+        assert!(set1.is_ok());
+        assert!(set2.is_ok());
+        assert!(set3.is_ok());
+
+        assert_eq!(
+            kv.get("a".to_string()),
+            Some(KeyValue {
+                key: "a".to_string(),
+                value: "b".to_string()
+            })
+        );
+        assert_eq!(
+            kv.get("c".to_string()),
+            Some(KeyValue {
+                key: "c".to_string(),
+                value: "d".to_string()
+            })
+        );
+        assert_eq!(
+            kv.get("e".to_string()),
+            Some(KeyValue {
+                key: "e".to_string(),
+                value: "f".to_string()
+            })
+        );
+        assert_eq!(kv.get("g".to_string()), None);
     }
 
     // test: create kv without directories
