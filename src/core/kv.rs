@@ -109,7 +109,7 @@ impl KiviStore {
 
         match get {
             Some(x) => Ok(serde_json::from_str(x)?),
-            None => Err(KiviError::Generic(format!("Costam"))),
+            None => Err(KiviError::Generic("Internal failed".to_string())),
         }
     }
 
@@ -175,7 +175,7 @@ impl KiviStore {
             .open(new_file_test_path.clone()) // TODO: change str
             .expect("openoptions fails");
 
-        for (_, record) in &self.mem_index {
+        for record in self.mem_index.values() {
             let internal = self.get_internal(record)?;
             let as_str = serde_json::to_string(&internal)?;
 
@@ -215,7 +215,7 @@ impl KiviStore {
 
 fn calculate_new_index(input: &Vec<std::path::PathBuf>) -> usize {
     if input.is_empty() {
-        return 1 as usize;
+        return 1_usize;
     }
 
     input

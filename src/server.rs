@@ -90,19 +90,19 @@ impl Command {
                     return Command::Invalid;
                 }
 
-                return Command::Set {
+                Command::Set {
                     key: as_vec[1].clone(),
                     value: as_vec[2].clone(),
-                };
+                }
             }
             b"get" => {
                 if as_vec.len() != 2 {
                     return Command::Invalid;
                 }
 
-                return Command::Get {
+                Command::Get {
                     key: as_vec[1].clone(),
-                };
+                }
             }
             _ => Command::Invalid,
         }
@@ -112,7 +112,7 @@ impl Command {
 fn stream_to_vec(buf: &[u8]) -> Vec<String> {
     let s = str::from_utf8(buf).expect("Could not from utf8");
 
-    let v = s.split(" ").collect::<Vec<&str>>();
+    let v = s.split(' ').collect::<Vec<&str>>();
 
     v.iter().map(|x| x.to_string()).collect::<Vec<String>>()
 }
