@@ -110,6 +110,10 @@ impl Config {
         &self.data_extension
     }
 
+    pub fn get_temp_data_dir(&self) -> &String {
+        &self.temp_data_dir
+    }
+
     pub fn get_full_path(&self) -> String {
         format!("{}/{}", &self.db_path.to_str().unwrap(), self.data_dir)
     }

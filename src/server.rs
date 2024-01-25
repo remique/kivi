@@ -4,6 +4,7 @@ use std::str;
 
 use crate::core::{error::Result, kv::KiviStore};
 
+#[allow(dead_code)]
 enum Command {
     Set { key: String, value: String },
     Get { key: String },
@@ -66,7 +67,7 @@ impl KiviServer {
                     }
                 }
             }
-            Command::Set { key, value } => {
+            Command::Set { key: _, value: _ } => {
                 //
             }
             Command::Invalid => {

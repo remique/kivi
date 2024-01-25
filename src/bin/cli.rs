@@ -40,7 +40,7 @@ fn main() -> Result<()> {
             let key = m.get_one::<String>("KEY").unwrap().to_owned();
             let value = m.get_one::<String>("VALUE").unwrap().to_owned();
 
-            ks.set(key, value);
+            ks.set(key, value)?;
         }
         Some(("get", m)) => {
             let key = m.get_one::<String>("KEY").unwrap().to_owned();
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
             }
         }
         Some(("compact", _)) => {
-            ks.compact();
+            ks.compact()?;
         }
         _ => {}
     }
