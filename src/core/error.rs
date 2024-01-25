@@ -10,6 +10,9 @@ pub enum KiviError {
 
     #[error("Serde_json error: {0}")]
     Serde(#[from] serde_json::Error),
+
+    #[error("GlobPatternError error: {0}")]
+    GlobPatternError(#[from] glob::PatternError),
 }
 
 pub type Result<T> = std::result::Result<T, KiviError>;

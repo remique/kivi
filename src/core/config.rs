@@ -79,9 +79,9 @@ impl Config {
         ConfigBuilder::default()
     }
 
-    pub fn get_glob_path(&self) -> String {
+    pub fn get_glob_pattern(&self) -> String {
         format!(
-            "{}/{}/*.{}",
+            "{}/{}/[0-9]*.{}",
             &self.db_path.to_str().unwrap(),
             self.data_dir,
             self.data_extension
@@ -125,7 +125,7 @@ mod tests {
         let p = PathBuf::from("./db");
 
         assert_eq!(c.db_path, p);
-        assert_eq!(c.get_glob_path(), String::from("./db/data/*.log"));
+        assert_eq!(c.get_glob_pattern(), String::from("./db/data/[0-9]*.log"));
         assert_eq!(c.new_active_file_path(1), String::from("./db/data/1.log"));
         assert_eq!(c.get_full_path(), String::from("./db/data"))
     }
@@ -137,7 +137,7 @@ mod tests {
         let p = PathBuf::from("./db");
 
         assert_eq!(c.db_path, p);
-        assert_eq!(c.get_glob_path(), String::from("./db/data/*.log"));
+        assert_eq!(c.get_glob_pattern(), String::from("./db/data/[0-9]*.log"));
         assert_eq!(c.new_active_file_path(1), String::from("./db/data/1.log"));
         assert_eq!(c.get_full_path(), String::from("./db/data"))
     }
@@ -152,8 +152,8 @@ mod tests {
 
         assert_eq!(c.temp_data_dir, String::from("temp"));
         assert_eq!(
-            c.get_glob_path(),
-            String::from("/var/folders/h_/abc/ddd/*.filez")
+            c.get_glob_pattern(),
+            String::from("/var/folders/h_/abc/ddd/[0-9]*.filez")
         );
         assert_eq!(
             c.new_active_file_path(1),
