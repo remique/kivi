@@ -1,10 +1,9 @@
 use glob::glob;
 use serde::{Deserialize, Serialize};
+use serde_json::Deserializer;
 use std::io::prelude::*;
-use std::os::fd::AsFd;
 use std::path::PathBuf;
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions};
-use tempdir::TempDir;
 
 use crate::core::config::Config;
 use crate::core::error::{KiviError, Result};
@@ -51,9 +50,7 @@ impl KiviStore {
         // Create directories if they dont exist
         Self::create_directories(&config)?;
 
-        let mut mem_index = BTreeMap::new();
-
-        let stale_file_list = data_files_sorted(&config);
+        let stale_file_list = data_files_sorted(&config)?;
         let new_active_file_index = calculate_new_index(&stale_file_list);
         let stale_files = stale_file_list;
 
@@ -65,7 +62,7 @@ impl KiviStore {
             .read(true)
             .open(config.new_active_file_path(new_active_file_index))?;
 
-        build_keydir(&stale_files, &mut mem_index);
+        let mem_index = build_index(&stale_files)?;
 
         Ok(Self {
             mem_index,
@@ -186,14 +183,14 @@ impl KiviStore {
         }
 
         // 1. Delete all log files in db/data/
-        data_files_sorted(&self.config).iter().for_each(|f| {
+        data_files_sorted(&self.config)?.iter().for_each(|f| {
             std::fs::remove_file(f).unwrap();
         });
 
         // 2. Move new_file_test to db/data directory
         drop(new_file_test);
         std::fs::rename(new_file_test_path, "db/data/1.log").unwrap();
-        let new_stale_files = data_files_sorted(&self.config);
+        let new_stale_files = data_files_sorted(&self.config)?;
         self.stale_files = new_stale_files;
         // 3. Set new_file_test as stale files
         // 4. Create new active_file
@@ -230,62 +227,70 @@ fn calculate_new_index(input: &Vec<std::path::PathBuf>) -> usize {
         + 1
 }
 
-fn build_keydir(stale_files: &Vec<PathBuf>, mem_index: &mut BTreeMap<String, InternalRecord>) {
-    for file in stale_files {
-        let file_d = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(file)
-            .unwrap();
+fn build_index(stales: &[PathBuf]) -> Result<BTreeMap<String, InternalRecord>> {
+    let mut index = BTreeMap::new();
+
+    for file in stales {
+        let file_d = OpenOptions::new().read(true).open(file)?;
 
         let reader = std::io::BufReader::new(file_d);
+
         let mut pos: i32 = 0;
-        let mut commands = serde_json::Deserializer::from_reader(reader).into_iter::<KiviCommand>();
 
-        while let Some(cos) = commands.next() {
-            let new_pos = commands.byte_offset() as i32;
+        let mut comms = Deserializer::from_reader(reader).into_iter::<KiviCommand>();
 
-            if let Ok(kivi_command) = cos {
-                if let KiviCommand::Set { key, value: _ } = kivi_command {
-                    let as_str = file.as_path().display().to_string();
+        while let Some(command) = comms.next() {
+            let new_pos = comms.byte_offset() as i32;
 
-                    let rec = InternalRecord {
-                        file_id: as_str,
-                        value_size: new_pos - pos,
-                        value_pos: pos,
-                    };
-                    mem_index.insert(key, rec);
+            match command {
+                Ok(c) => {
+                    if let KiviCommand::Set { key, value: _ } = c {
+                        let as_str = file.as_path().display().to_string();
+
+                        let rec = InternalRecord {
+                            file_id: as_str,
+                            value_size: new_pos - pos,
+                            value_pos: pos,
+                        };
+                        index.insert(key, rec);
+                    }
+                }
+                Err(e) => {
+                    return Err(KiviError::Generic(e.to_string()));
                 }
             }
             pos = new_pos;
         }
     }
 
-    log::debug!("KeyDir: {:?}", mem_index);
+    // log::debug!("KeyDir: {:?}", index);
+
+    Ok(index)
 }
 
-fn data_files_sorted(config: &Config) -> Vec<std::path::PathBuf> {
+fn data_files_sorted(config: &Config) -> Result<Vec<std::path::PathBuf>> {
     let mut files = Vec::new();
 
-    // TODO: If it's not [0-9]* then fail
-    let paths = glob(config.get_glob_path().as_ref()).unwrap();
+    let paths = glob(config.get_glob_pattern().as_ref())?;
 
     for path in paths {
-        if let Ok(item) = path {
-            files.push(item);
+        match path {
+            Ok(file) => files.push(file),
+            Err(_) => {
+                return Err(KiviError::Generic("a".to_string()));
+            }
         }
     }
 
     files.sort();
 
-    files
+    Ok(files)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{os::unix::prelude::PermissionsExt, path::Path};
+    use std::path::Path;
     use tempdir::TempDir;
 
     #[test]
@@ -444,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bad_files_inside_fail() {
-        //
+    fn test_bad_inside_files_fail() {
+        // What if i write some corrupted file 1.log?
     }
 }

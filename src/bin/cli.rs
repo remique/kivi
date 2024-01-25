@@ -12,7 +12,10 @@ fn initialize_logger() {
 fn main() -> Result<()> {
     initialize_logger();
 
-    let mut ks = KiviStore::new()?;
+    let mut ks = match KiviStore::new() {
+        Ok(ks) => ks,
+        Err(e) => return Err(e),
+    };
 
     let m = Command::new("kivi")
         .subcommand(
