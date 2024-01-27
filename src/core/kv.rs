@@ -5,9 +5,18 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions};
 
-use crate::core::config::Config;
-use crate::core::error::{KiviError, Result};
+use crate::core::{
+    config::Config,
+    error::{KiviError, Result},
+};
 use log;
+
+pub struct KiviStore {
+    mem_index: BTreeMap<String, InternalRecord>,
+    active_file: File,
+    stale_files: Vec<PathBuf>,
+    config: Config,
+}
 
 #[derive(Debug)]
 struct InternalRecord {
@@ -17,7 +26,7 @@ struct InternalRecord {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-enum KiviCommand {
+pub enum KiviCommand {
     Set { key: String, value: String },
     Delete { key: String },
 }
@@ -28,12 +37,7 @@ pub struct KeyValue {
     pub value: String,
 }
 
-pub struct KiviStore {
-    mem_index: BTreeMap<String, InternalRecord>,
-    active_file: File,
-    stale_files: Vec<PathBuf>,
-    config: Config,
-}
+impl Engine for KiviStore {}
 
 impl KiviStore {
     fn create_directories(config: &Config) -> Result<()> {
@@ -51,7 +55,7 @@ impl KiviStore {
         Self::create_directories(&config)?;
 
         let stale_file_list = data_files_sorted(&config)?;
-        let new_active_file_index = calculate_new_index(&stale_file_list);
+        let new_active_file_index = last_file_index(&stale_file_list) + 1;
         let stale_files = stale_file_list;
 
         log::info!("Current active file index: {}", new_active_file_index);
@@ -145,7 +149,7 @@ impl KiviStore {
         // TODO: cleaner
         let path = self
             .config
-            .new_active_file_path(calculate_new_index(&self.stale_files));
+            .new_active_file_path(last_file_index(&self.stale_files) + 1);
 
         let rec = InternalRecord {
             file_id: path,
@@ -201,7 +205,7 @@ impl KiviStore {
             .read(true)
             .open(
                 self.config
-                    .new_active_file_path(calculate_new_index(&self.stale_files)),
+                    .new_active_file_path(last_file_index(&self.stale_files) + 1),
             )
             .unwrap();
 
@@ -213,18 +217,17 @@ impl KiviStore {
     }
 }
 
-fn calculate_new_index(input: &Vec<std::path::PathBuf>) -> usize {
-    if input.is_empty() {
-        return 1_usize;
-    }
-
-    input
+fn last_file_index(input: &[PathBuf]) -> usize {
+    let res = input
         .last()
         .and_then(|x| x.file_stem())
         .and_then(|x| x.to_str())
-        .and_then(|x| x.parse::<usize>().ok())
-        .unwrap()
-        + 1
+        .and_then(|x| x.parse::<usize>().ok());
+
+    match res {
+        Some(value) => value,
+        None => 0_usize,
+    }
 }
 
 fn build_index(stales: &[PathBuf]) -> Result<BTreeMap<String, InternalRecord>> {
@@ -292,6 +295,33 @@ mod tests {
     use super::*;
     use std::path::Path;
     use tempdir::TempDir;
+
+    #[test]
+    fn test_last_file_index() {
+        let first = PathBuf::from("./1.log");
+        let second = PathBuf::from("./2.log");
+        let third = PathBuf::from("./3.log");
+
+        let zero: Vec<PathBuf> = vec![];
+        let only_first = vec![first.clone()];
+        let first_and_third = vec![first.clone(), third.clone()];
+        let all = vec![first, second, third];
+
+        assert_eq!(last_file_index(&zero), 0_usize);
+        assert_eq!(last_file_index(&only_first), 1_usize);
+        assert_eq!(last_file_index(&first_and_third), 3_usize);
+        assert_eq!(last_file_index(&all), 3_usize);
+    }
+
+    #[test]
+    fn test_last_file_index_fuzzed() {
+        let first = PathBuf::from("./aaa.log");
+        let second = PathBuf::from("./bbb.log");
+
+        let all = vec![first, second];
+
+        assert_eq!(last_file_index(&all), 0_usize);
+    }
 
     #[test]
     fn test_creating() {
