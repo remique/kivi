@@ -37,8 +37,6 @@ pub struct KeyValue {
     pub value: String,
 }
 
-impl Engine for KiviStore {}
-
 impl KiviStore {
     fn create_directories(config: &Config) -> Result<()> {
         std::fs::create_dir_all(config.get_full_path())?;
