@@ -74,7 +74,7 @@ impl Lexer {
     /// This function reads a character, returns it and moves to the next position
     fn read_char(&mut self) -> Option<char> {
         let curr_char = self.current_char;
-        if curr_char == '0' {
+        if curr_char == '\0' {
             return None;
         }
 
@@ -82,7 +82,7 @@ impl Lexer {
 
         if next_position >= self.input.len() {
             self.current_position = self.current_position.saturating_add(1);
-            self.current_char = '0';
+            self.current_char = '\0';
         } else {
             self.current_position = self.current_position.saturating_add(1);
             self.current_char = self.input.as_bytes()[self.current_position] as char;
@@ -118,15 +118,16 @@ mod tests {
 
     #[test]
     fn test_read_char() {
-        let mut l = Lexer::new("+-").unwrap();
+        let mut l = Lexer::new("+-a 0.2").unwrap();
 
-        let first = l.read_char();
-        let second = l.read_char();
-        let third = l.read_char();
-
-        assert_eq!(first, Some('+'));
-        assert_eq!(second, Some('-'));
-        assert_eq!(third, None);
+        assert_eq!(l.read_char(), Some('+'));
+        assert_eq!(l.read_char(), Some('-'));
+        assert_eq!(l.read_char(), Some('a'));
+        assert_eq!(l.read_char(), Some(' '));
+        assert_eq!(l.read_char(), Some('0'));
+        assert_eq!(l.read_char(), Some('.'));
+        assert_eq!(l.read_char(), Some('2'));
+        assert_eq!(l.read_char(), None);
     }
 
     #[test]
@@ -166,7 +167,7 @@ mod tests {
             l,
             Lexer {
                 input: "+-".to_string(),
-                current_char: '0',
+                current_char: '\0',
                 current_position: 2,
             }
         );
