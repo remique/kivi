@@ -23,6 +23,17 @@ pub enum TokenType {
     EOF,
 }
 
+impl TokenType {
+    // TODO: Actually we can do TryFrom
+    fn get_keyword_type(input: &str) -> Option<KeywordType> {
+        match input {
+            "select" => Some(KeywordType::Select),
+            "insert" => Some(KeywordType::Insert),
+            _ => None,
+        }
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub struct Token {
     token_type: TokenType,
@@ -105,6 +116,10 @@ impl Lexer {
 
         let res_str: String = res.into_iter().collect();
 
+        if let Some(keyword) = TokenType::get_keyword_type(&res_str) {
+            return TokenType::Keyword(keyword);
+        }
+
         TokenType::Identifier(res_str)
 
         // then we match on the string and check if its any of the reserved keywords
@@ -175,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_string() {
-        let mut l = Lexer::new("hello w").unwrap();
+        let mut l = Lexer::new("hello world").unwrap();
         assert_eq!(
             Some(Token {
                 token_type: TokenType::Identifier("hello".to_string()),
@@ -185,11 +200,30 @@ mod tests {
         );
         assert_eq!(
             Some(Token {
-                token_type: TokenType::Identifier("w".to_string()),
+                token_type: TokenType::Identifier("world".to_string()),
                 position: 0
             }),
             l.next_token(),
         );
-        assert_eq!(None, l.next_token(),);
+        assert_eq!(None, l.next_token());
+    }
+
+    #[test]
+    fn test_keyword() {
+        let mut l = Lexer::new("select world").unwrap();
+        assert_eq!(
+            Some(Token {
+                token_type: TokenType::Keyword(KeywordType::Select),
+                position: 0
+            }),
+            l.next_token(),
+        );
+        assert_eq!(
+            Some(Token {
+                token_type: TokenType::Identifier("world".to_string()),
+                position: 0
+            }),
+            l.next_token(),
+        );
     }
 }
