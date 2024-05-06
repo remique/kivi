@@ -3,6 +3,7 @@ pub enum KeywordType {
     Select,
     Insert,
     From,
+    Where,
 }
 
 #[derive(PartialEq, Debug)]
@@ -10,9 +11,12 @@ pub enum TokenType {
     Keyword(KeywordType),
     Identifier(String),
 
+    SqlString(String),
+
     PlusSign,
     MinusSign,
     StarSign,
+    EqualSign,
     EOF,
 }
 
@@ -26,6 +30,7 @@ impl TryFrom<&str> for KeywordType {
             "select" => Ok(KeywordType::Select),
             "insert" => Ok(KeywordType::Insert),
             "from" => Ok(KeywordType::From),
+            "where" => Ok(KeywordType::Where),
             _ => Err("Not a Keyword"),
         }
     }

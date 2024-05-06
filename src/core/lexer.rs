@@ -45,14 +45,27 @@ impl Lexer {
             '+' => Some(Token::new(TokenType::PlusSign, self.current_position)),
             '-' => Some(Token::new(TokenType::MinusSign, self.current_position)),
             '*' => Some(Token::new(TokenType::StarSign, self.current_position)),
+            '=' => Some(Token::new(TokenType::EqualSign, self.current_position)),
+            '\'' => {
+                // Skip first character
+                self.read_char();
+                let starting_pos = self.current_position;
+                let res = self.read_sql_string();
+
+                if let Ok(sql_string) = res {
+                    Some(Token::new(sql_string, starting_pos))
+                } else {
+                    None
+                }
+            }
             //_ if self.current_char.is_ascii_digit() => {
             //    //
             //}
             _ if self.current_char.is_ascii_alphabetic() => {
                 let starting_pos = self.current_position;
-                let x = self.read_string();
+                let res = self.read_string();
 
-                Some(Token::new(x, starting_pos))
+                Some(Token::new(res, starting_pos))
             }
             _ => None,
         };
@@ -86,7 +99,7 @@ impl Lexer {
 
     fn read_string(&mut self) -> TokenType {
         let mut res: Vec<char> = Vec::new();
-        while self.current_char.is_ascii_alphabetic() {
+        while self.current_char.is_ascii_alphabetic() || self.current_char == '_' {
             let c = self.read_char();
             if let Some(val) = c {
                 res.push(val);
@@ -102,9 +115,32 @@ impl Lexer {
         }
 
         TokenType::Identifier(res_str)
+    }
 
-        // then we match on the string and check if its any of the reserved keywords
-        // if its not then its identifier else its a keyword
+    /// This function reads an SQL string. Currently we only accept `\'` as a proper string,
+    /// as it is based on PostgreSQL dialect, but will probably add support for others as well
+    /// in the future.
+    fn read_sql_string(&mut self) -> Result<TokenType> {
+        let mut res: Vec<char> = Vec::new();
+        while self.current_char != '\'' || self.current_char != '\0' {
+            let c = self.read_char();
+            match c {
+                Some(val) => {
+                    if val == '\'' {
+                        break;
+                    } else {
+                        res.push(val);
+                    }
+                }
+                None => break,
+            }
+
+            // Here we will probably return Err
+        }
+
+        let res_str: String = res.into_iter().collect();
+
+        Ok(TokenType::SqlString(res_str))
     }
 }
 
@@ -252,5 +288,47 @@ mod tests {
             }),
             l.next_token(),
         );
+    }
+
+    #[test]
+    fn test_whole_query() {
+        let mut l = Lexer::new("SeLect * fRom my_table WheRe my_param = 'ayaya'").unwrap();
+
+        let result = vec![
+            Token {
+                token_type: TokenType::Keyword(KeywordType::Select),
+                position: 0,
+            },
+            Token {
+                token_type: TokenType::StarSign,
+                position: 7,
+            },
+            Token {
+                token_type: TokenType::Keyword(KeywordType::From),
+                position: 9,
+            },
+            Token {
+                token_type: TokenType::Identifier("my_table".to_string()),
+                position: 14,
+            },
+            Token {
+                token_type: TokenType::Keyword(KeywordType::Where),
+                position: 23,
+            },
+            Token {
+                token_type: TokenType::Identifier("my_param".to_string()),
+                position: 29,
+            },
+            Token {
+                token_type: TokenType::EqualSign,
+                position: 38,
+            },
+            Token {
+                token_type: TokenType::SqlString("ayaya".to_string()),
+                position: 41,
+            },
+        ];
+
+        assert_eq!(l.tokenize(), result);
     }
 }
