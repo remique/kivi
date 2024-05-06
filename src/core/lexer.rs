@@ -1,52 +1,13 @@
-use crate::core::error::Result;
+use crate::core::{
+    error::Result,
+    token::{Token, TokenType},
+};
 
 #[derive(Debug, PartialEq)]
 pub struct Lexer {
     input: String,
     current_char: char,
     current_position: usize,
-}
-
-#[derive(PartialEq, Debug)]
-pub enum KeywordType {
-    Select,
-    Insert,
-}
-
-#[derive(PartialEq, Debug)]
-pub enum TokenType {
-    Keyword(KeywordType),
-    Identifier(String),
-
-    PlusSign,
-    MinusSign,
-    EOF,
-}
-
-impl TokenType {
-    // TODO: Actually we can do TryFrom
-    fn get_keyword_type(input: &str) -> Option<KeywordType> {
-        match input {
-            "select" => Some(KeywordType::Select),
-            "insert" => Some(KeywordType::Insert),
-            _ => None,
-        }
-    }
-}
-
-#[derive(PartialEq, Debug)]
-pub struct Token {
-    token_type: TokenType,
-    position: usize,
-}
-
-impl Token {
-    fn new(token_type: TokenType, position: usize) -> Self {
-        Self {
-            token_type,
-            position,
-        }
-    }
 }
 
 impl Lexer {
@@ -61,7 +22,25 @@ impl Lexer {
         Ok(lexer)
     }
 
+    fn tokenize(&mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+
+        while let Some(tok) = self.next_token() {
+            tokens.push(tok);
+        }
+
+        tokens
+    }
+
+    fn skip_whitespace(&mut self) {
+        if self.current_char.is_whitespace() {
+            self.read_char();
+        }
+    }
+
     fn next_token(&mut self) -> Option<Token> {
+        self.skip_whitespace();
+
         let token = match self.current_char {
             '+' => Some(Token::new(TokenType::PlusSign, 0)),
             '-' => Some(Token::new(TokenType::MinusSign, 0)),
@@ -69,9 +48,10 @@ impl Lexer {
             //    //
             //}
             _ if self.current_char.is_ascii_alphabetic() => {
+                let starting_pos = self.current_position;
                 let x = self.read_string();
 
-                Some(Token::new(x, 0))
+                Some(Token::new(x, starting_pos))
             }
             _ => None,
         };
@@ -130,6 +110,7 @@ impl Lexer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::token::KeywordType;
 
     #[test]
     fn test_read_char() {
@@ -189,6 +170,28 @@ mod tests {
     }
 
     #[test]
+    fn test_basic_tokenize() {
+        let mut l = Lexer::new("+- hellou").unwrap();
+
+        let result = vec![
+            Token {
+                token_type: TokenType::PlusSign,
+                position: 0,
+            },
+            Token {
+                token_type: TokenType::MinusSign,
+                position: 0,
+            },
+            Token {
+                token_type: TokenType::Identifier("hellou".to_string()),
+                position: 3,
+            },
+        ];
+
+        assert_eq!(l.tokenize(), result);
+    }
+
+    #[test]
     fn test_string() {
         let mut l = Lexer::new("hello world").unwrap();
         assert_eq!(
@@ -201,7 +204,7 @@ mod tests {
         assert_eq!(
             Some(Token {
                 token_type: TokenType::Identifier("world".to_string()),
-                position: 0
+                position: 6
             }),
             l.next_token(),
         );
@@ -221,7 +224,7 @@ mod tests {
         assert_eq!(
             Some(Token {
                 token_type: TokenType::Identifier("world".to_string()),
-                position: 0
+                position: 7
             }),
             l.next_token(),
         );
