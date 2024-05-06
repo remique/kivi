@@ -1,6 +1,6 @@
 use crate::core::{
     error::Result,
-    token::{Token, TokenType},
+    token::{KeywordType, Token, TokenType},
 };
 
 #[derive(Debug, PartialEq)]
@@ -42,8 +42,9 @@ impl Lexer {
         self.skip_whitespace();
 
         let token = match self.current_char {
-            '+' => Some(Token::new(TokenType::PlusSign, 0)),
-            '-' => Some(Token::new(TokenType::MinusSign, 0)),
+            '+' => Some(Token::new(TokenType::PlusSign, self.current_position)),
+            '-' => Some(Token::new(TokenType::MinusSign, self.current_position)),
+            '*' => Some(Token::new(TokenType::StarSign, self.current_position)),
             //_ if self.current_char.is_ascii_digit() => {
             //    //
             //}
@@ -96,7 +97,7 @@ impl Lexer {
 
         let res_str: String = res.into_iter().collect();
 
-        if let Some(keyword) = TokenType::get_keyword_type(&res_str) {
+        if let Some(keyword) = KeywordType::try_from(res_str.as_str()).ok() {
             return TokenType::Keyword(keyword);
         }
 
@@ -114,6 +115,7 @@ mod tests {
 
     #[test]
     fn test_read_char() {
+        // TODO: Parse numbers
         let mut l = Lexer::new("+-a 0.2").unwrap();
 
         assert_eq!(l.read_char(), Some('+'));
@@ -155,7 +157,7 @@ mod tests {
         assert_eq!(
             Some(Token {
                 token_type: TokenType::MinusSign,
-                position: 0
+                position: 1
             }),
             l.next_token(),
         );
@@ -180,11 +182,33 @@ mod tests {
             },
             Token {
                 token_type: TokenType::MinusSign,
-                position: 0,
+                position: 1,
             },
             Token {
                 token_type: TokenType::Identifier("hellou".to_string()),
                 position: 3,
+            },
+        ];
+
+        assert_eq!(l.tokenize(), result);
+    }
+
+    #[test]
+    fn test_case_insensitive_input() {
+        let mut l = Lexer::new("SeLeCt * fRoM").unwrap();
+
+        let result = vec![
+            Token {
+                token_type: TokenType::Keyword(KeywordType::Select),
+                position: 0,
+            },
+            Token {
+                token_type: TokenType::StarSign,
+                position: 7,
+            },
+            Token {
+                token_type: TokenType::Keyword(KeywordType::From),
+                position: 9,
             },
         ];
 
