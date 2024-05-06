@@ -2,6 +2,7 @@
 pub enum KeywordType {
     Select,
     Insert,
+    From,
 }
 
 #[derive(PartialEq, Debug)]
@@ -11,16 +12,21 @@ pub enum TokenType {
 
     PlusSign,
     MinusSign,
+    StarSign,
     EOF,
 }
 
-impl TokenType {
-    // TODO: Actually we can do TryFrom
-    pub fn get_keyword_type(input: &str) -> Option<KeywordType> {
-        match input {
-            "select" => Some(KeywordType::Select),
-            "insert" => Some(KeywordType::Insert),
-            _ => None,
+impl TryFrom<&str> for KeywordType {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let value_case_insensitive = value.to_ascii_lowercase();
+
+        match value_case_insensitive.as_ref() {
+            "select" => Ok(KeywordType::Select),
+            "insert" => Ok(KeywordType::Insert),
+            "from" => Ok(KeywordType::From),
+            _ => Err("Not a Keyword"),
         }
     }
 }
